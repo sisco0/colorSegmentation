@@ -11,12 +11,14 @@ using bivariable histogram technique
 */
 
 cv::Mat convertToHLS(cv::Mat image);
+cv::Mat bivariableHist(unsigned int histHeight, unsigned int histWidth, cv::Mat firstMat, cv::Mat secondMat);
 
 int main(int argc, char **argv)
 {
 	//Load image
-	cv::Mat image,image32,hlsImage,hlsChannels[3];
-	image = cv::imread("parrots.jpg",CV_LOAD_IMAGE_COLOR);
+	cv::Mat image,image32,hlsImage;
+	cv::Mat hlsChannels[3];
+	image = cv::imread("parrots2.jpg",CV_LOAD_IMAGE_COLOR);
 	image.convertTo(image32,CV_32F);
 	if(!image.data)
 	{
@@ -27,22 +29,78 @@ int main(int argc, char **argv)
     cv::namedWindow( "Original image", cv::WINDOW_NORMAL);
     cv::imshow( "Original image", image );	//Images are stored in BGR format
     //Convert to HLS
-    hlsImage = convertToHLS(image);
+    image32 = image32/255.0;
+    cv::cvtColor(image32,hlsImage,cv::COLOR_BGR2HLS);
     cv::split(hlsImage, hlsChannels);
+    //Fix s
+    hlsChannels[2].mul(1-2*abs(1/2-hlsChannels[1]));    
+    //hlsChannels[2] = hlsChannels[2].*(1-2*abs(1/2-hlsChannels[1]));
     cv::Size imSize = hlsImage.size();
-    printf("\n");
     //Channels are saved at hlsChannels, create the bivariable histogram
-    /*double minH,maxH,minL,maxL,minS,maxS;
+    cv::waitKey(0);
+    double maxH,maxL,maxS,minH,minL,minS;
     cv::minMaxLoc(hlsChannels[0],&minH,&maxH);
     cv::minMaxLoc(hlsChannels[1],&minL,&maxL);
     cv::minMaxLoc(hlsChannels[2],&minS,&maxS);
-    printf("H: [%lf,%lf]    L: [%lf,%lf]    S: [%lf,%lf]\n",minH,maxH,minL,maxL,minS,maxS);
-    for (int i = 0; i < imSize.width*imSize.height; ++i)
-    {
-    	printf("%lf\n",hlsChannels[2].at<float>(i));
-    }*/
+    printf("H: %f %f\n",minH,maxH);
+    printf("L: %f %f\n",minL,maxL);
+    printf("S: %f %f\n",minS,maxS);
+
+    cv::waitKey(0);
+
+
+    const unsigned int histScale = 2;
+    //Achromatic bivariable histogram
+    cv::Mat histogram = bivariableHist(256*histScale, 256*histScale, hlsChannels[1]*256*histScale, hlsChannels[2]*256*histScale);
+    histogram.convertTo(histogram,CV_32F);
+    cv::log(histogram,histogram);
+    //Autocontrast
+    double minHist,maxHist;
+    cv::minMaxLoc(histogram,&minHist,&maxHist);
+    histogram = histogram/maxHist*255;
+    cv::namedWindow( "Grayscale bivariable achromatic histogram", cv::WINDOW_NORMAL);
+    cv::imshow( "Grayscale bivariable achromatic  histogram", histogram);
+    cv::waitKey(0);
+
+    //Chromatic bivariable histogram
+    histogram = bivariableHist(360*histScale, 256*histScale, hlsChannels[0]*histScale, hlsChannels[2]*256*histScale);
+    histogram.convertTo(histogram,CV_32F);
+    cv::log(histogram,histogram);
+    //Autocontrast
+    cv::minMaxLoc(histogram,&minHist,&maxHist);
+    histogram = histogram/maxHist*255;
+    cv::namedWindow( "Grayscale bivariable chromatic histogram", cv::WINDOW_NORMAL);
+    cv::imshow( "Grayscale bivariable chromatic  histogram", histogram);
+
     cv::waitKey(0);
     return 0;
+}
+
+/*
+bivariableHist creates a variable histogram
+from two channels of the image, using the first
+one as rows and the second as columns
+*/
+
+cv::Mat bivariableHist(unsigned int histHeight, unsigned int histWidth, cv::Mat firstMat, cv::Mat secondMat)
+{
+	cv::Mat histogram;
+	cv::Size imSize = firstMat.size();
+	histogram = cv::Mat::zeros(histHeight, histWidth, CV_32S);
+	std::cout << firstMat.size() << "->" << secondMat.size() << std::endl;
+	for (int i = 0; i < imSize.height; ++i)
+		for (int j = 0; j < imSize.width; ++j)
+		{
+			//printf("Calc'ing posY...\n");
+			int posY=round(firstMat.at<float>(i,j));
+			//printf("Calc'ing posX...\n");
+			int posX=round(secondMat.at<float>(i,j));
+			histogram.at<int>(
+				posY,
+				posX
+			)++;
+		}
+	return histogram;
 }
 
 /*
@@ -81,12 +139,5 @@ cv::Mat convertToHLS(cv::Mat image)
 			if(i==0&&j<5) printf("RGB: (%f,%f,%f) -> HLS: (%f,%f,%f)\n",r,g,b,*h,*l,*s);
 		}
 	}
-	//DEBUG
-    for (int i = 0; i < 15; ++i)
-    {
-    	if(i%3==0) printf("\n");
-    	float hlsComp = hlsImage.at<float>(0,i);
-    	printf("%f ",hlsComp);
-    }
 	return hlsImage;
 }
